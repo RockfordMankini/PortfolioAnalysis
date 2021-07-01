@@ -14,18 +14,15 @@ get_covariance_matrix <- function(portfolio) {
   stocks <- portfolio$stocks
   method <- portfolio$method
   
+  # historical covariance. very simple
   if(method == "historical") {
     return(cov(get_returns(stocks)))
   }
   
+  # single index model covariance.
   if(method == "SIM") {
     index <- portfolio$index
     rf <- portfolio$rf
-    
-    #print(index)
-    
-    # print(index)
-    # print(stocks)
     
     r <- get_returns(cbind(index, stocks))
     
@@ -33,9 +30,7 @@ get_covariance_matrix <- function(portfolio) {
     
     #Compute the betas:
     covmat <- var(r)
-    
-    # print(r)
-    # print(covmat)
+
     beta <- covmat[1,-1] / covmat[1,1]
     
     #Keep only the stocks with positive betas:
@@ -52,10 +47,6 @@ get_covariance_matrix <- function(portfolio) {
     stock <- rep(0,ncol(rrr))
     
     n <- ncol(rrr)
-    
-    print(n)
-    
-    #print(rrr)
     
     #This for loop computes the required inputs:
     for(i in 1:ncol(rrr)){
@@ -89,13 +80,6 @@ get_covariance_matrix <- function(portfolio) {
       }
     }
     
-    print("Names cause the issues maybe?")
-    #print(covmat_SIM)
-    
-    print(names(stocks))
-    print(length(names(stocks)))
-    print(dim(covmat_SIM))
-    
     rownames(covmat_SIM) <- names(rrr)
     colnames(covmat_SIM) <- names(rrr)
     
@@ -112,6 +96,8 @@ get_covariance_matrix <- function(portfolio) {
   
 }
 
+# using the covariance, the frontier can be drawn, and a portfolio can be found for a given E.
+# once the portfolio is found, the portfolio's risk can be found as well.
 portfolio_from_return <- function(portfolio, E) {
   
   means <- portfolio$returns
@@ -131,6 +117,8 @@ portfolio_from_return <- function(portfolio, E) {
   
 }
 
+# given a covariance matrix, the returns, and the risk free asset
+# the "best" portfolio that can be given with a combination of the risk free asset can be found
 get_optimum_portfolio <- function(portfolio) {
   
   returns <- portfolio$returns
@@ -142,6 +130,7 @@ get_optimum_portfolio <- function(portfolio) {
   
 }
 
+# given the returns and covariance matrix, the minimum risk portfolio can be found.
 get_min_risk <- function(portfolio) {
   
   means <- portfolio$returns
@@ -157,71 +146,81 @@ get_min_risk <- function(portfolio) {
   
 }
 
+# multiply expected returns by weights.
 get_portfolio_return <- function(portfolio) {
   
   drop(t(portfolio$weights) %*% portfolio$returns)
   
 }
 
+# simply the covariance of a linear transformation.
 get_portfolio_variance <- function(portfolio) {
   
   drop(t(portfolio$weights) %*% portfolio$cov %*% portfolio$weights)
   
 }
 
+# this is possibly the most important function here.
+# it builds the portfolio object, which contains many attributes about the portfolio, including:
+# the stock data, index data, the risk free rate, the weights, whether or not shorts are allowed,
+# the returns/covariance matrices of the stocks given the model, the portfolio returns and variance, and other misc. attributes
+# these are all used in order to create the frontier and other visual/numerical aids/data.
 build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, index=NA, beta_adj_method=NA, shorts_allowed=NA) {
   
- # print("test")
-  
+  # the most fundamental parts of any portfolio object.
   portfolio <- list(method = method, stocks=stocks)
   
+  # SIM requires a beta adj. method, an index, and whether or not shorts are allowed.
   if(method=="SIM") {
     portfolio$index <- index
     portfolio$beta_adj_method <- beta_adj_method
     portfolio$shorts_allowed <- shorts_allowed
   }
   
-  portfolio$returns <- get_mean_returns(stocks)
-  portfolio$rf <- rf
-  print("test")
-  portfolio$cov <- get_covariance_matrix(portfolio)
+  portfolio$returns <- get_mean_returns(stocks) # the same for any portfolio
+  portfolio$rf <- rf # could potentially be NA for historical covariance.
+  portfolio$cov <- get_covariance_matrix(portfolio) # varies heavily based on the model used.
   
-  portfolio$stocks <- portfolio$stocks[colnames(portfolio$cov)]
-  
-  
-  # done in case of negative betas
+  # if there are negative betas, or if no short sales are allowed, the stocks and returns need to be reassigned  
+  portfolio$stocks <- portfolio$stocks[colnames(portfolio$cov)] 
   portfolio$returns <- get_mean_returns(portfolio$stocks)
   
-  # find portfolio given E on curve
+  # find portfolio given E on curve if E is supplied.
   if(!is.na(E)) {
     portfolio$weights <- portfolio_from_return(portfolio, E)
   }
 
-  # optimum with RF
+  # optimum with RF, i.e. the point of tangency for the curve and the RF.
   else if(!is.na(rf)) {
     portfolio$weights <- get_optimum_portfolio(portfolio)
     print(portfolio$weights)
   }
   
-  # min risk
+  # min risk portfolio
   else {
     portfolio$weights <- get_min_risk(portfolio)
   }
   
+  # self explanatory
   portfolio$port_return <- get_portfolio_return(portfolio)
   portfolio$port_var <- get_portfolio_variance(portfolio)
   
+  # name set for the object if supplied. used in the app
   if(!is.na(name)) {
     portfolio$name <- name
   }
   
+  # ditto for the rf
   if(!is.na(rf_name)) {
     portfolio$rf_name <- rf_name
   }
   
+  # return the portfolio object
   portfolio
 }
 
+# use the hyperbola method as discussed here: http://www.stat.ucla.edu/~nchristo/statistics_c183_c283/merton_hyperbola_example.R
+# returns a dataframe that's used in the plotly in the app
 plot_frontier <- function(portfolio) {
   
   E <- seq(-5, 5, .1)
@@ -247,30 +246,10 @@ plot_frontier <- function(portfolio) {
   options(warn = 0)
   
   df <- data.frame(sdeff, y1, y2)
-  # return(df)
-  # 
-  # g <- plot_ly(df,x=~sdeff, y=~y1, type = 'scatter', mode = 'lines', name="Positive Returns")
-  # g <- g %>% add_trace(x = ~sdeff, y= ~y2,  type='scatter', mode = 'lines', name="Negative Returns")
-  # 
-  # x <- list(
-  #   title = "Standard Deviation (Risk)"
-  # )
-  # y <- list(
-  #   title = "Expected Return"
-  # )
-  # 
-  # g <- g %>% layout(xaxis = x, yaxis = y)
-  # 
-  # #df2 <- data.frame(x=0, y=.4)
-  # #g <- g %>% add_trace(data=df2, x = ~x, y = ~y, mode="markers")
-  # #print(g)
-  # 
-  # g %>% layout(xaxis = list(range = c(0, .2)), yaxis = list(range=c(-.2, .2)))
   
 }
 
-
-
+# just a bar graph of the weights
 plot_portfolio <- function(portfolio) {
   
   weights <- portfolio$weights
@@ -283,7 +262,3 @@ plot_portfolio <- function(portfolio) {
   
 }
 
-#data <- read.csv("stonks_cut.csv")
-# f <- build_portfolio(data, "historical")
-# 
-# f
