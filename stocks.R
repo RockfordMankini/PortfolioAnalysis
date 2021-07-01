@@ -28,12 +28,12 @@ get_covariance_matrix <- function(stocks, method) {
 }
 
 # get minimum risk portfolio
-get_min_risk <- function(stocks, method) {
+get_min_risk <- function(portfolio) {
   
-  means <- get_mean_returns(stocks)
-  covmat <- get_covariance_matrix(stocks, method)
+  means <- portfolio$returns
+  covmat <- portfolio$cov
   
-  n <- ncol(stocks)
+  n <- ncol(portfolio$stocks)
   
   numerator <- solve(covmat) %*% rep(1, n)
   denom <- drop(t(rep(1, n)) %*% solve(covmat) %*% rep(1, n))

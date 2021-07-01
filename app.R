@@ -9,8 +9,9 @@
 
 library(shiny)
 library(DT)
+library(plotly)
 
-source("stocks.R")
+source("stocks_new.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -38,7 +39,14 @@ ui <- fluidPage(
                         
                         tabPanel("Model Selection", 
                                  selectInput("method", label="Select a model", 
-                                             choices=c("Historical Covariance"="historical"))),
+                                             choices=c("Historical Covariance"="historical",
+                                                       "Single Index Model"="SIM",
+                                                       "Constant Correlation Model" = "CC",
+                                                       "Multi-Group Model" = "MGM")),
+                                 selectInput("short", "Short Sales Allowed? (Non Historical-Covariance Models Only)",
+                                             c("Yes" = TRUE,
+                                               "No" = FALSE))),
+                        
                         tabPanel("Multi-Group Model",
                                  helpText("This requires that the uploaded stock data is formatted such that stocks
                                               in the same industry are in adjacent columns. Breaks also must be input so that the model
@@ -47,21 +55,34 @@ ui <- fluidPage(
                                  br(),
                                  textInput("industry_breaks", "Breaks For Industries", "3, 6, 9")),
                         
-                        tabPanel("Find Portfolios", 
-                                 actionButton("minRiskPortfolio", label = "Get Minimum Risk Portfolio"),
-                                 numericInput("num", label = h3("Get Portfolio For Expected Value"), value = .01, step=.01),
-                                 actionButton("portfolioFromReturn", label = "Calculate"), 
-                                 br(), 
-                                 numericInput("rf", label = h3("Add Risk Free Asset"), value = 0, step=.001),
-                                 textInput("rfName", "RF Name", "RF"),
-                                 actionButton("optimumPortfolio", label = "Find Optimum Portfolio"),
-                                 actionButton("clearPortfolios", label="Clear Portfolios")))),
+                        # tabPanel("Constant Correlation Model",
+                        #          helpText("This requires that the uploaded stock data is formatted such that stocks
+                        #                       in the same industry are in adjacent columns. Breaks also must be input so that the model
+                        #                       can tell which stocks belong to which industry. For example, if you have 3 industries for 3 stocks
+                        #                       each, the breaks would be input as '3, 6, 9'."), 
+                        #          br(),
+                        #          textInput("industry_breaks", "Breaks For Industries", "3, 6, 9")),
+                        
+                        # tabPanel("Single Index Model",
+                        #          helpText("Upload the index in setup and decide if short sales should be allowed."), 
+                        #          br(),
+                        #          selectInput("SIM_short", "Short Sales Allowed?",
+                        #                      c("Yes" = TRUE,
+                        #                        "No" = FALSE))),
+                        
+                        
+                        tabPanel("Find Portfolios",
+                                #numericInput("num", label = h3("Get Portfolio For Expected Value"), value = .01, step=.01),
+                                #actionButton("portfolioFromReturn", label = "Calculate"), 
+                                #br(), 
+                                numericInput("rf", label = h3("Add Risk Free Asset"), value = 0, step=.001),
+                                textInput("rfName", "RF Name", "RF"),
+                                actionButton("optimumPortfolio", label = "Find Optimum Portfolio"),
+                                #actionButton("minRiskPortfolio", label = "Get Minimum Risk Portfolio"),
+                                actionButton("clearPortfolios", label="Clear Portfolios")))),
         
         # Show a plot of the generated distribution
         mainPanel(
-            h2("Efficient Frontier"),
-            h6("(File Uploaded Needed To Display)"),
-            plotlyOutput("frontier"),
             h2("Portfolio"),
             textInput("portfolioName", "Portfolio Name", "New Portfolio"),
             actionButton("addPortfolio", label = "Add To Plot"),
@@ -73,6 +94,9 @@ ui <- fluidPage(
                         tabPanel("Table", DT::dataTableOutput("portfolio_table")),
                         tabPanel("Stock Data", DT::dataTableOutput("stock_data"))
             ),
+            h2("Efficient Frontier"),
+            h6("(Plot Needs to be Added to Display)"),
+            plotlyOutput("frontier")
         )
     )
 )
@@ -105,73 +129,85 @@ server <- function(input, output) {
     })
     
     frontier <- reactive({
-        req(input$stock_data)
-        g <- plot_frontier(data(), input$method)
+        
+        req(length(portfolio_list()) > 0)
+        #g <- plot_frontier(portfolio())
+        
+        g <- plot_ly()
+        
+        x <- list(
+            title = "Standard Deviation (Risk)"
+        )
+        y <- list(
+            title = "Expected Return"
+        )
+        
+        g <- g %>% layout(xaxis = x, yaxis = y)
         
         if(length(portfolio_list()) > 0) {
             for(i in 1:length(portfolio_list())) {
                 portfolio <- portfolio_list()[[i]]
+
+                rf <- portfolio$rf
+
+                sd <- portfolio$port_var^.5
+                expected <- portfolio$port_return
+                name <- portfolio$name
+
+                df <- plot_frontier(portfolio)
                 
-                rf <- portfolio_rf_list()[i]
-                
-                sd <- get_portfolio_variance(portfolio, data(), input$method)^.5
-                expected <- get_portfolio_return(portfolio, data())
-                name <- names(portfolio_list()[i])
-                
-                print(rf)
-                
-                name_rf <- names(rf)
-                
-                g <- g %>% add_trace(x = sd, y = expected, name = name, mode = 'markers') 
-                
-                print(rf)
-                
-                if(rf > 0) {
-                    g <- g %>% add_trace(x = 0, y = rf, name = name_rf, mode='markers')
+                g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                g <- g %>% add_trace(x = sd, y = expected, name = name, mode = 'markers')
+
+
+                if(!is.na(rf)) {
                     
+                    name_rf <- portfolio$rf_name
+                    g <- g %>% add_trace(x = 0, y = rf, name = name_rf, mode='markers', type='scatter')
+
                     slope <- (rf - expected)/(0-sd)
                     new_x <- sd + .25
                     new_y <- new_x * slope + rf
-                    
-                    g <- g %>% add_segments(x = new_x, y = new_y, xend = 0, yend = rf, showlegend=FALSE)
-                    
+
+                    g <- g %>% add_segments(x = new_x, y = new_y, xend = 0, yend = rf, name=paste("Capital Allocation Line:", name))
+
                 }
             }
         }
-        
-        g
+
+        g %>% layout(xaxis = list(range = c(0, .2)), yaxis = list(range=c(-.2, .2)))
     })
     
     portfolio <- reactiveVal()
     
-    portfolio_rf <- reactiveVal()
-    
     portfolio_list <- reactiveVal(list())
-    
-    portfolio_rf_list <- reactiveVal(numeric())
     
     observeEvent(input$portfolioFromReturn, {
         req(data())
-        portfolio(portfolio_from_return(data(), input$num, input$method))
-        portfolio_rf(0)
+        portfolio(build_portfolio(stocks=data(), E=input$num, method=input$method, name=input$portfolioName))
     })
     
     observeEvent(input$minRiskPortfolio, {
         req(data())
-        portfolio(get_min_risk(data(), input$method))
-        portfolio_rf(0)
+        portfolio(build_portfolio(stocks=data(), method=input$method, name=input$portfolioName))
     })
     
     observeEvent(input$optimumPortfolio, {
         req(data())
         
-        print(breaks)
-        
         rf <- input$rf
+        shorts_allowed <- as.logical(input$short)
         
-        if(rf > 0) {
-            portfolio(get_optimum_portfolio(data(), rf, input$method))
-            portfolio_rf(rf)
+        print(shorts_allowed)
+        
+        if(input$method == "SIM" & rf > 0) {
+            index <- read.csv(input$index_data$datapath)
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, index=index, shorts_allowed = shorts_allowed))
+        }
+
+        else if(input$method == "historical" & rf > 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, name=input$portfolioName))
         }
         
     })
@@ -185,16 +221,12 @@ server <- function(input, output) {
         names(new_portfolio_list)[portfolios + 1] <- input$portfolioName
         portfolio_list(new_portfolio_list)
         
-        new_rfs <- portfolio_rf_list()
-        new_rfs <- c(new_rfs, portfolio_rf())
-        names(new_rfs)[length(new_rfs)] <- input$rfName
-        portfolio_rf_list(new_rfs)
+        print(portfolio_list())
         
     })
     
     observeEvent(input$clearPortfolios, {
         portfolio_list(list())
-        portfolio_rf_list(numeric())
     })
     
     output$frontier <- renderPlotly({
@@ -203,8 +235,8 @@ server <- function(input, output) {
     
     output$summary <- renderText({
         req(portfolio())
-        sd <- get_portfolio_variance(portfolio(), data(), input$method)^.5
-        expected <- get_portfolio_return(portfolio(), data())
+        sd <- portfolio()$port_var^.5
+        expected <- portfolio()$port_return
         
         paste("Expected Return: ", expected, "\n", "Risk (Standard Deviation): ", sd, sep="")
     })
@@ -216,7 +248,7 @@ server <- function(input, output) {
     })
     
     output$portfolio_table <- renderDataTable({
-        portfolio()
+        portfolio()$weights
     })
     
     output$stock_data <- renderDataTable({
