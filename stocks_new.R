@@ -20,6 +20,7 @@ get_covariance_matrix <- function(portfolio) {
   }
   
   # single index model covariance.
+  # something is wrong with the math here. I'm not sure what.
   if(method == "SIM") {
     index <- portfolio$index
     rf <- portfolio$rf
@@ -59,40 +60,262 @@ get_covariance_matrix <- function(portfolio) {
       stock[i] <- i
     }
     
-    covmat_SIM <- matrix(nrow=n, ncol=n)
+    xx <- (cbind(stock,alpha, beta, Ribar, mse, Ratio))
+    rownames(xx) <- names(rrr)
+    
+    A <- xx[order(-xx[,6]),]
+    
+    A
+    
+    col1 <- rep(0,nrow(A))
+    col2 <- rep(0,nrow(A))
+    col3 <- rep(0,nrow(A))
+    col4 <- rep(0,nrow(A))
+    col5 <- rep(0,nrow(A))
+    
+    
+    #Create the last 5 columns of the table:
+    col1 <- (A[,4]-rf)*A[,3]/A[,5]
+    col3 <- A[,3]^2/A[,5]
+    for(i in(1:nrow(A))) {
+      col2[i] <- sum(col1[1:i])
+      col4[i] <- sum(col3[1:i])
+    }
+    
+    #So far we have:
+    cbind(A, col1, col2, col3, col4)
+    
+    
+    #Compute the Ci (col5):
+    for(i in (1:nrow(A))) {
+      col5[i] <- var(r[,1])*col2[i]/(1+var(r[,1])*col4[i])
+    }
+    
+    #SHORT SALES ALLOWED:
+    #Compute the Zi:
+    z_short <- (A[,3]/A[,5])*(A[,6]-col5[nrow(A)])
+    #Compute the xi:
+    x_short <- z_short/sum(z_short)
+    
+    #The final table when short sales allowed:
+    Weights_with_short <- cbind(A, col1, col2, col3, col4, col5, z_short, x_short)
+    print(Weights_with_short)
+    
+    mat <- matrix(nrow=n, ncol=n)
+    msm <- var(r[,1])
+    
+    #Var-covar matrix based on the constant correlation model:
+    for(i in 1:n){
+
+      for(j in 1:n){
+
+        if(i==j){
+          mat[i,j] <- (msm * beta[i]^2) + mse[i]
+        } else
+        {
+          mat[i,j] <- msm * beta[i] * beta[j]
+        }
+      }
+    }
+    
+    print(Weights_with_short)
+    print(mat)
+    
+    table1 <- Weights_with_short[,-c(12,13)]
+    table2 <- table1[1:which(col5==max(col5)), ]
+    
+    print(table1)
+    print(table2)
+    
+    if(portfolio$shorts_allowed == FALSE) {
+
+      mat <- mat[1:which(col5==max(col5)),1:which(col5==max(col5))]
+      rownames(mat) <- rownames(table2)
+      colnames(mat) <- rownames(table2)
+
+
+      #Compute the Zi:
+      z_no_short <- (table2[,3]/table2[,5])*(table2[,6]-max(col5))
+      
+      #Compute the xi:
+      x_no_short <- z_no_short/sum(z_no_short)
+      print(x_no_short)
+      
+    }
+
+    else {
+      rownames(mat) <- rownames(Weights_with_short)
+      colnames(mat) <- rownames(Weights_with_short)
+    }
+
+    return(mat)
+    
+  }
+  
+  # Constant Correlation Model
+  if(method == "CC") {
+    
+    n <- ncol(stocks)
+    rf <- portfolio$rf
+    
+    r <- get_returns(stocks)
+    rho <- (sum(cor(r[1:n]))-n)/(n^2 - n)
+    
+    #Initialize the vectors:
+    col1 <- rep(0,n)
+    col2 <- rep(0,n)
+    col3 <- rep(0,n)
+    
+    #Initialize the var-covar matrix:
+    y <- rep(0,n^2)
+    mat <- matrix(y, ncol=n, nrow=n)
+    
+    Rbar <- colMeans(r)
+    Rbar_f <- Rbar-rf
+    sigma <- ( diag(var(r[1:n])) )^0.5
+    Ratio <- Rbar_f/sigma
+    
+    #Initial table:
+    xx <- (cbind(Rbar, Rbar_f, sigma, Ratio))
+    
+    print(Rbar)
+    print(Rbar_f)
+    print(sigma)
+    print(Ratio)
+    
+    #Order the table based on the excess return to sigma ratio:
+    aaa <- xx[order(-Ratio),]
+    
+    
+    #Create the last 3 columns of the table:
+    for(i in(1:n)) {
+      
+      col1[i] <- rho/(1-rho+i*rho)
+      col2[i] <- sum(aaa[,4][1:i])
+    }
+    
+    #Compute the Ci:
+    for(i in (1:n)) {
+      
+      col3[i] <- col1[i]*col2[i]
+      
+    }
+    
+    #Create the entire table until now:
+    xxx <- cbind(aaa, col1, col2, col3)
+    
+    #SHORT SALES ALLOWED:
+    #Compute the Zi:
+    z <- (1/((1-rho)*xxx[,3]))*(xxx[,4]-xxx[,7][nrow(xxx)])
+    
+    #Compute the xi:
+    x <- z/sum(z)
+    
+    #The final table:
+    aaaa <- cbind(xxx, z, x)
+    print(aaaa)
+
+    #Var-covar matrix based on the constant correlation model:
+    for(i in 1:n){
+      
+      for(j in 1:n){
+        
+        if(i==j){
+          mat[i,j]=aaaa[i,3]^2
+        } else
+        {
+          mat[i,j]=rho*aaaa[i,3]*aaaa[j,3]
+        }
+      }
+    }
+    
+    if(portfolio$shorts_allowed == FALSE) {
+      print("Test")
+      mat <- mat[1:which(aaaa[,7]==max(aaaa[,7])),1:which(aaaa[,7]==max(aaaa[,7]))]
+      aaaaa <- aaaa[1:which(aaaa[,7]==max(aaaa[,7])), ]
+      z_no <- (1/((1-rho)*aaaaa[,3]))*(aaaaa[,4]-aaaaa[,7][nrow(aaaaa)])
+      x_no <- z_no/sum(z_no)
+      print(x_no)
+      
+      rownames(mat) <- rownames(aaaaa)
+      colnames(mat) <- rownames(aaaaa)
+
+      
+    }
+    
+    else {
+      rownames(mat) <- rownames(aaa)
+      colnames(mat) <- rownames(aaa)
+    }
+    
+    return(mat)
+    
+  }
+  
+  ### MULTI GROUP MODEL
+  
+  if(method == "MGM") {
+    
+    corrmat <- cor(get_returns(stocks))
+    breaks <- portfolio$breaks
+    
+    rho_bar <- multi_group_rho(corrmat, breaks)
+    
+    n <- ncol(stocks)
+    
+    rho_mat <- matrix(nrow = n, ncol = n)
+
+    industries_key <- numeric(n)
+    
+    industries_index <- 1
     
     for(i in 1:n) {
-      b_i <- beta[i]
+      
+      industries_key[i] <- industries_index
+      
+      if(i %in% breaks) {
+        industries_index <- 1 + industries_index
+      }
+      
+      
+    }
+    
+    for(i in 1:n) {
+      ind_i <- industries_key[i]
       for(j in 1:n) {
+        ind_j <- industries_key[j]
         
-        b_j <- beta[j]
+        rho_mat[i,j] <- rho_bar[ind_i, ind_j]
         
         if(i == j) {
-          entry <- covmat[1,1] * b_i^2 + mse[i]^2
+          rho_mat[i,j] <- 1
         }
-        
-        else {
-          entry <- covmat[1,1] * b_i * b_j
-        }
-        
-        covmat_SIM[i,j] <- entry
         
       }
     }
     
-    rownames(covmat_SIM) <- names(rrr)
-    colnames(covmat_SIM) <- names(rrr)
+    print(rho_bar)
+    print(rho_mat)
     
-    return(covmat_SIM)
+    mat <- matrix(nrow=n, ncol=n)
     
+    covmat <- cov(get_returns(stocks))
+    variances <- diag(covmat)
+    
+    for(i in 1:n) {
+      for(j in 1:n) {
+        
+        mat[i, j] <- variances[i]^.5 * variances[j]^.5 * rho_mat[i,j]
+        
+      }
+    }
+    
+    rownames(mat) <- colnames(stocks)
+    colnames(mat) <- colnames(stocks)
+    
+    return(mat)
+
   }
-  
-  # if(method == "mgm") {
-  #   
-  #   corrmat <- cor(get_returns(stocks))
-  #   variances <- diag(cov(get_returns(stocks)))
-  #   
-  # }
   
 }
 
@@ -165,16 +388,20 @@ get_portfolio_variance <- function(portfolio) {
 # the stock data, index data, the risk free rate, the weights, whether or not shorts are allowed,
 # the returns/covariance matrices of the stocks given the model, the portfolio returns and variance, and other misc. attributes
 # these are all used in order to create the frontier and other visual/numerical aids/data.
-build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, index=NA, beta_adj_method=NA, shorts_allowed=NA) {
+build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, index=NA, beta_adj_method=NA, shorts_allowed=NA, breaks=NA) {
   
   # the most fundamental parts of any portfolio object.
   portfolio <- list(method = method, stocks=stocks)
+  portfolio$shorts_allowed <- shorts_allowed
   
   # SIM requires a beta adj. method, an index, and whether or not shorts are allowed.
   if(method=="SIM") {
     portfolio$index <- index
     portfolio$beta_adj_method <- beta_adj_method
-    portfolio$shorts_allowed <- shorts_allowed
+  }
+  
+  if(method=="MGM") {
+    portfolio$breaks <- breaks
   }
   
   portfolio$returns <- get_mean_returns(stocks) # the same for any portfolio
@@ -229,7 +456,6 @@ plot_frontier <- function(portfolio) {
   means <- portfolio$returns
   covmat <- portfolio$cov
   n <- ncol(portfolio$stocks)
-  print(n)
   
   A <- t(rep(1,n)) %*% solve(covmat) %*% means
   B <- t(means) %*% solve(covmat) %*% means
@@ -262,3 +488,44 @@ plot_portfolio <- function(portfolio) {
   
 }
 
+
+
+### MULTI GROUP MODEL
+
+multi_group_rho <- function(corrmat, breaks) {
+
+  industries <- length(breaks)
+  
+  start_inds <- c(1, breaks[1:industries-1] + 1)
+  end_inds <- breaks
+
+  rho_bar <- matrix(nrow = industries, ncol = industries)
+
+  for(row in 1:industries) {
+
+    rows <- start_inds[row]:end_inds[row]
+
+    for(column in 1:industries) {
+
+      if(row > column) {
+        next
+      }
+
+      columns <- start_inds[column]:end_inds[column]
+
+      rho <- corrmat[rows, columns]
+
+      if(row == column) {
+        rho <- rho[upper.tri(rho)]
+      }
+
+      rho_bar[row, column] <- mean(rho)
+      rho_bar[column, row] <- mean(rho)
+
+    }
+
+  }
+
+  rho_bar
+
+}

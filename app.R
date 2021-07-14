@@ -10,6 +10,7 @@
 library(shiny)
 library(DT)
 library(plotly)
+library(stringr)
 
 source("stocks_new.R")
 
@@ -43,7 +44,7 @@ ui <- fluidPage(
                                                        "Single Index Model"="SIM",
                                                        "Constant Correlation Model" = "CC",
                                                        "Multi-Group Model" = "MGM")),
-                                 selectInput("short", "Short Sales Allowed? (Non Historical-Covariance Models Only)",
+                                 selectInput("short", "Short Sales Allowed? (Non Historical-Covariance Models Only, No Efficient Frontier Will Be Drawn)",
                                              c("Yes" = TRUE,
                                                "No" = FALSE))),
                         
@@ -154,12 +155,14 @@ server <- function(input, output) {
                 expected <- portfolio$port_return
                 name <- portfolio$name
 
-                df <- plot_frontier(portfolio)
+                if(portfolio$shorts_allowed == TRUE) {
+                    df <- plot_frontier(portfolio)
+                    
+                    g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                }
                 
-                g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
                 g <- g %>% add_trace(x = sd, y = expected, name = name, mode = 'markers')
-
-
+                
                 if(!is.na(rf)) {
                     
                     name_rf <- portfolio$rf_name
@@ -205,9 +208,22 @@ server <- function(input, output) {
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
                                       name=input$portfolioName, index=index, shorts_allowed = shorts_allowed))
         }
+        
+        else if(input$method == "CC" & rf > 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = shorts_allowed))
+        }
 
         else if(input$method == "historical" & rf > 0) {
-            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, name=input$portfolioName))
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE))
+        }
+        
+        else if(input$method == "MGM" & rf > 0) {
+            breaks <- str_split(input$industry_breaks, ",")[[1]] %>% str_trim() %>% as.numeric()
+            
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE, breaks=breaks))
         }
         
     })
@@ -215,6 +231,8 @@ server <- function(input, output) {
     observeEvent(input$addPortfolio, {
         req(portfolio())
         
+
+            
         portfolios <- length(portfolio_list())
         new_portfolio_list <- portfolio_list()
         new_portfolio_list[[portfolios + 1]] <- portfolio()
@@ -222,6 +240,8 @@ server <- function(input, output) {
         portfolio_list(new_portfolio_list)
         
         print(portfolio_list())
+        
+        
         
     })
     
