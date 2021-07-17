@@ -104,7 +104,11 @@ get_covariance_matrix <- function(portfolio) {
     mat <- matrix(nrow=n, ncol=n)
     msm <- var(r[,1])
     
-    #Var-covar matrix based on the constant correlation model:
+    beta <- beta[Weights_with_short[,1]]
+    mse <- mse[Weights_with_short[,1]]
+    
+    
+    #Var-covar matrix based on the SIM model:
     for(i in 1:n){
 
       for(j in 1:n){
@@ -148,6 +152,8 @@ get_covariance_matrix <- function(portfolio) {
       colnames(mat) <- rownames(Weights_with_short)
     }
 
+    print(mat)
+    
     return(mat)
     
   }
