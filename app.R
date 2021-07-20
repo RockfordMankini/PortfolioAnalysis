@@ -73,27 +73,32 @@ ui <- fluidPage(
                         
                         
                         tabPanel("Find Portfolios",
-                                #numericInput("num", label = h3("Get Portfolio For Expected Value"), value = .01, step=.01),
-                                #actionButton("portfolioFromReturn", label = "Calculate"), 
-                                #br(), 
                                 numericInput("rf", label = h3("Add Risk Free Asset"), value = 0, step=.001),
                                 textInput("rfName", "RF Name", "RF"),
+                                numericInput("num", label = h3("Expected Value"), value = .01, step=.01),
                                 actionButton("optimumPortfolio", label = "Find Optimum Portfolio"),
-                                #actionButton("minRiskPortfolio", label = "Get Minimum Risk Portfolio"),
-                                actionButton("clearPortfolios", label="Clear Portfolios")))),
+                                actionButton("portfolioFromReturn", label = "Get Portfolio From E"),
+                                actionButton("minRiskPortfolio", label = "Get Minimum Risk Portfolio"),
+                                br(),
+                                br(),
+                                actionButton("clearPortfolios", label="Clear Portfolios")),
+                        tabPanel("Frontier Plot",
+                                 textInput("portfolioName", "Portfolio Name", "New Portfolio"),
+                                 actionButton("addPortfolio", label = "Add To Plot"),
+                                 checkboxInput("plotTopFrontier", label = "Print Frontier (Top Half)", value = TRUE),
+                                 checkboxInput("plotBottomFrontier", label = "Print Frontier (Bottom Half)", value = TRUE),
+                                 checkboxInput("plotCAL", label = "Print CAL Line", value = TRUE),
+                                 checkboxInput("plotRF", label = "Plot Risk Free Assets", value = TRUE),
+                                 checkboxInput("plotPortfolio", label = "Plot Portfolio", value = TRUE)))),
         
         # Show a plot of the generated distribution
         mainPanel(
-            h2("Portfolio"),
-            textInput("portfolioName", "Portfolio Name", "New Portfolio"),
-            actionButton("addPortfolio", label = "Add To Plot"),
-            br(),
-            br(),
             tabsetPanel(type = "tabs",
-                        tabPanel("Plot", plotlyOutput("portfolio_hist")),
-                        tabPanel("Summary", verbatimTextOutput("summary")),
-                        tabPanel("Table", DT::dataTableOutput("portfolio_table")),
-                        tabPanel("Stock Data", DT::dataTableOutput("stock_data"))
+                        tabPanel("Plot of Weights", plotlyOutput("portfolio_hist")),
+                        tabPanel("Portfolio Summary", verbatimTextOutput("summary")),
+                        tabPanel("Table of Weights", DT::dataTableOutput("portfolio_table")),
+                        tabPanel("Stock Data", DT::dataTableOutput("stock_data")),
+                        tabPanel("Misc. Mathematical Values:", verbatimTextOutput("portfolioVals"))
             ),
             h2("Efficient Frontier"),
             h6("(Plot Needs to be Added to Display)"),
@@ -158,21 +163,29 @@ server <- function(input, output) {
                 if(portfolio$shorts_allowed == TRUE) {
                     df <- plot_frontier(portfolio)
                     
-                    g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                    if(input$plotTopFrontier){
+                        g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                    }
                 }
                 
-                g <- g %>% add_trace(x = sd, y = expected, name = name, mode = 'markers')
+                if(input$plotPortfolio) {
+                    g <- g %>% add_trace(x = sd, y = expected, name = name, mode = 'markers')
+                }
                 
-                if(!is.na(rf)) {
+                if(!is.na(rf) & rf > 0) {
                     
                     name_rf <- portfolio$rf_name
-                    g <- g %>% add_trace(x = 0, y = rf, name = name_rf, mode='markers', type='scatter')
+                    if(input$plotRF) {
+                        g <- g %>% add_trace(x = 0, y = rf, name = name_rf, mode='markers', type='scatter')
+                    }
 
                     slope <- (rf - expected)/(0-sd)
                     new_x <- sd + .25
                     new_y <- new_x * slope + rf
 
-                    g <- g %>% add_segments(x = new_x, y = new_y, xend = 0, yend = rf, name=paste("Capital Allocation Line:", name))
+                    if(input$plotCAL) {
+                        g <- g %>% add_segments(x = new_x, y = new_y, xend = 0, yend = rf, name=paste("Capital Allocation Line:", name))
+                    }
 
                 }
             }
@@ -182,17 +195,70 @@ server <- function(input, output) {
     })
     
     portfolio <- reactiveVal()
-    
     portfolio_list <- reactiveVal(list())
     
     observeEvent(input$portfolioFromReturn, {
         req(data())
-        portfolio(build_portfolio(stocks=data(), E=input$num, method=input$method, name=input$portfolioName))
+        
+        rf <- input$rf
+        shorts_allowed <- as.logical(input$short)
+        
+        if(input$method == "SIM" & rf > 0) {
+            req(input$index_data)
+            index <- read.csv(input$index_data$datapath)
+            
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, index=index, shorts_allowed = shorts_allowed, E=input$num))
+        }
+        
+        else if(input$method == "CC" & rf > 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = shorts_allowed, E=input$num))
+        }
+        
+        else if(input$method == "historical" & rf >= 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE, E=input$num))
+        }
+        
+        else if(input$method == "MGM" & rf > 0) {
+            breaks <- str_split(input$industry_breaks, ",")[[1]] %>% str_trim() %>% as.numeric()
+            
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE, breaks=breaks, E=input$num))
+        }
     })
     
     observeEvent(input$minRiskPortfolio, {
         req(data())
-        portfolio(build_portfolio(stocks=data(), method=input$method, name=input$portfolioName))
+        
+        rf <- input$rf
+        shorts_allowed <- as.logical(input$short)
+        
+        if(input$method == "SIM" & rf > 0) {
+            req(input$index_data)
+            index <- read.csv(input$index_data$datapath)
+            
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, index=index, shorts_allowed = shorts_allowed, min_risk = TRUE))
+        }
+        
+        else if(input$method == "CC" & rf > 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = shorts_allowed, min_risk = TRUE))
+        }
+        
+        else if(input$method == "historical" & rf >= 0) {
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE, min_risk = TRUE))
+        }
+        
+        else if(input$method == "MGM" & rf > 0) {
+            breaks <- str_split(input$industry_breaks, ",")[[1]] %>% str_trim() %>% as.numeric()
+            
+            portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
+                                      name=input$portfolioName, shorts_allowed = TRUE, breaks=breaks, min_risk = TRUE))
+        }
     })
     
     observeEvent(input$optimumPortfolio, {
@@ -204,7 +270,9 @@ server <- function(input, output) {
         print(shorts_allowed)
         
         if(input$method == "SIM" & rf > 0) {
+            req(input$index_data)
             index <- read.csv(input$index_data$datapath)
+
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
                                       name=input$portfolioName, index=index, shorts_allowed = shorts_allowed))
         }
@@ -214,7 +282,7 @@ server <- function(input, output) {
                                       name=input$portfolioName, shorts_allowed = shorts_allowed))
         }
 
-        else if(input$method == "historical" & rf > 0) {
+        else if(input$method == "historical" & rf >= 0) {
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
                                       name=input$portfolioName, shorts_allowed = TRUE))
         }
@@ -273,6 +341,27 @@ server <- function(input, output) {
     
     output$stock_data <- renderDataTable({
         data()
+    })
+    
+    output$portfolioVals <- renderText({
+        
+        req(portfolio())
+        
+        portfolio <- portfolio()
+        
+        toPrint <- paste("A: ", portfolio$A, "\n",
+              "B: ", portfolio$B, "\n",
+              "C: ", portfolio$C, "\n",
+              "D: ", portfolio$D, "\n", sep="")
+        
+        if(!is.null(portfolio$lambda_1)) {
+            toPrint <- paste(toPrint,
+                             "Lambda 1: ", portfolio$lambda_1, "\n",
+                             "Lambda 2: ", portfolio$lambda_2, "\n", sep="")
+        }
+        
+        toPrint
+        
     })
 }
 

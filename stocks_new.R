@@ -235,6 +235,8 @@ get_covariance_matrix <- function(portfolio) {
       }
     }
     
+    print(portfolio$shorts_allowed)
+    
     if(portfolio$shorts_allowed == FALSE) {
       print("Test")
       mat <- mat[1:which(aaaa[,7]==max(aaaa[,7])),1:which(aaaa[,7]==max(aaaa[,7]))]
@@ -250,6 +252,7 @@ get_covariance_matrix <- function(portfolio) {
     }
     
     else {
+      print("test 2")
       rownames(mat) <- rownames(aaa)
       colnames(mat) <- rownames(aaa)
     }
@@ -327,22 +330,28 @@ get_covariance_matrix <- function(portfolio) {
 
 # using the covariance, the frontier can be drawn, and a portfolio can be found for a given E.
 # once the portfolio is found, the portfolio's risk can be found as well.
-portfolio_from_return <- function(portfolio, E) {
+portfolio_from_return <- function(portfolio) {
+  
+  E <- portfolio$E
   
   means <- portfolio$returns
   covmat <- portfolio$cov
   n <- ncol(portfolio$stocks)
   
-  A <- t(rep(1,n)) %*% solve(covmat) %*% means
-  B <- t(means) %*% solve(covmat) %*% means
-  C <- t(rep(1,n)) %*% solve(covmat) %*% rep(1,n)
-  D <- B * C - A^2
+  A <- portfolio$A
+  B <- portfolio$B
+  C <- portfolio$C
+  D <- portfolio$D
   
   lambda_1 <- drop((C * E - A)/D)
   lambda_2 <- drop((B - (A * E))/D)
   
+  portfolio$lambda_1 <- lambda_1
+  portfolio$lambda_2 <- lambda_2
+  
   weights <- lambda_1 * (solve(covmat) %*% means) + lambda_2 * (solve(covmat) %*% rep(1,n))
-  weights
+  portfolio$weights <- weights
+  portfolio
   
 }
 
@@ -394,7 +403,7 @@ get_portfolio_variance <- function(portfolio) {
 # the stock data, index data, the risk free rate, the weights, whether or not shorts are allowed,
 # the returns/covariance matrices of the stocks given the model, the portfolio returns and variance, and other misc. attributes
 # these are all used in order to create the frontier and other visual/numerical aids/data.
-build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, index=NA, beta_adj_method=NA, shorts_allowed=NA, breaks=NA) {
+build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, index=NA, beta_adj_method=NA, shorts_allowed=NA, breaks=NA, min_risk=NA) {
   
   # the most fundamental parts of any portfolio object.
   portfolio <- list(method = method, stocks=stocks)
@@ -418,20 +427,39 @@ build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, in
   portfolio$stocks <- portfolio$stocks[colnames(portfolio$cov)] 
   portfolio$returns <- get_mean_returns(portfolio$stocks)
   
+  n <- ncol(portfolio$stocks)
+  
+  # Vals used for finding a specific portfolio with return E
+  # Also relevant for plotting the frontier
+  
+  print("test 3")
+  A <- t(rep(1,n)) %*% solve(portfolio$cov) %*% portfolio$returns
+  B <- t(portfolio$returns) %*% solve(portfolio$cov) %*% portfolio$returns
+  C <- t(rep(1,n)) %*% solve(portfolio$cov) %*% rep(1,n)
+  D <- B * C - A^2
+  print("test 4")
+
+  portfolio$A <- A
+  portfolio$B <- B
+  portfolio$C <- C
+  portfolio$D <- D
+  
   # find portfolio given E on curve if E is supplied.
   if(!is.na(E)) {
-    portfolio$weights <- portfolio_from_return(portfolio, E)
+    portfolio$E <- E
+    portfolio <- portfolio_from_return(portfolio)
   }
 
-  # optimum with RF, i.e. the point of tangency for the curve and the RF.
-  else if(!is.na(rf)) {
-    portfolio$weights <- get_optimum_portfolio(portfolio)
-    print(portfolio$weights)
+  # min risk portfolio
+  else if(!is.na(min_risk)) {
+    portfolio$weights <- get_min_risk(portfolio)
   }
   
-  # min risk portfolio
+  # optimum with RF, i.e. the point of tangency for the curve and the RF.
   else {
-    portfolio$weights <- get_min_risk(portfolio)
+    print("before")
+    portfolio$weights <- get_optimum_portfolio(portfolio)
+    print("after")
   }
   
   # self explanatory
@@ -464,6 +492,7 @@ plot_frontier <- function(portfolio) {
   n <- ncol(portfolio$stocks)
   
   A <- t(rep(1,n)) %*% solve(covmat) %*% means
+  print(A)
   B <- t(means) %*% solve(covmat) %*% means
   C <- t(rep(1,n)) %*% solve(covmat) %*% rep(1,n)
   D <- B * C - A^2
