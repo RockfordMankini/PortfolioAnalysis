@@ -27,8 +27,6 @@ get_covariance_matrix <- function(portfolio) {
     
     r <- get_returns(cbind(index, stocks))
     
-    print("returns")
-    
     #Compute the betas:
     covmat <- var(r)
 
@@ -99,7 +97,6 @@ get_covariance_matrix <- function(portfolio) {
     
     #The final table when short sales allowed:
     Weights_with_short <- cbind(A, col1, col2, col3, col4, col5, z_short, x_short)
-    print(Weights_with_short)
     
     mat <- matrix(nrow=n, ncol=n)
     msm <- var(r[,1])
@@ -122,14 +119,8 @@ get_covariance_matrix <- function(portfolio) {
       }
     }
     
-    print(Weights_with_short)
-    print(mat)
-    
     table1 <- Weights_with_short[,-c(12,13)]
     table2 <- table1[1:which(col5==max(col5)), ]
-    
-    print(table1)
-    print(table2)
     
     if(portfolio$shorts_allowed == FALSE) {
 
@@ -143,16 +134,12 @@ get_covariance_matrix <- function(portfolio) {
       
       #Compute the xi:
       x_no_short <- z_no_short/sum(z_no_short)
-      print(x_no_short)
-      
     }
 
     else {
       rownames(mat) <- rownames(Weights_with_short)
       colnames(mat) <- rownames(Weights_with_short)
     }
-
-    print(mat)
     
     return(mat)
     
@@ -184,11 +171,6 @@ get_covariance_matrix <- function(portfolio) {
     #Initial table:
     xx <- (cbind(Rbar, Rbar_f, sigma, Ratio))
     
-    print(Rbar)
-    print(Rbar_f)
-    print(sigma)
-    print(Ratio)
-    
     #Order the table based on the excess return to sigma ratio:
     aaa <- xx[order(-Ratio),]
     
@@ -219,7 +201,6 @@ get_covariance_matrix <- function(portfolio) {
     
     #The final table:
     aaaa <- cbind(xxx, z, x)
-    print(aaaa)
 
     #Var-covar matrix based on the constant correlation model:
     for(i in 1:n){
@@ -235,15 +216,11 @@ get_covariance_matrix <- function(portfolio) {
       }
     }
     
-    print(portfolio$shorts_allowed)
-    
     if(portfolio$shorts_allowed == FALSE) {
-      print("Test")
       mat <- mat[1:which(aaaa[,7]==max(aaaa[,7])),1:which(aaaa[,7]==max(aaaa[,7]))]
       aaaaa <- aaaa[1:which(aaaa[,7]==max(aaaa[,7])), ]
       z_no <- (1/((1-rho)*aaaaa[,3]))*(aaaaa[,4]-aaaaa[,7][nrow(aaaaa)])
       x_no <- z_no/sum(z_no)
-      print(x_no)
       
       rownames(mat) <- rownames(aaaaa)
       colnames(mat) <- rownames(aaaaa)
@@ -252,7 +229,6 @@ get_covariance_matrix <- function(portfolio) {
     }
     
     else {
-      print("test 2")
       rownames(mat) <- rownames(aaa)
       colnames(mat) <- rownames(aaa)
     }
@@ -302,9 +278,6 @@ get_covariance_matrix <- function(portfolio) {
         
       }
     }
-    
-    print(rho_bar)
-    print(rho_mat)
     
     mat <- matrix(nrow=n, ncol=n)
     
@@ -432,12 +405,9 @@ build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, in
   # Vals used for finding a specific portfolio with return E
   # Also relevant for plotting the frontier
   
-  print("test 3")
   A <- t(rep(1,n)) %*% solve(portfolio$cov) %*% portfolio$returns
   B <- t(portfolio$returns) %*% solve(portfolio$cov) %*% portfolio$returns
   C <- t(rep(1,n)) %*% solve(portfolio$cov) %*% rep(1,n)
-  D <- B * C - A^2
-  print("test 4")
 
   portfolio$A <- A
   portfolio$B <- B
@@ -457,9 +427,7 @@ build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, in
   
   # optimum with RF, i.e. the point of tangency for the curve and the RF.
   else {
-    print("before")
     portfolio$weights <- get_optimum_portfolio(portfolio)
-    print("after")
   }
   
   # self explanatory
@@ -474,6 +442,36 @@ build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, in
   # ditto for the rf
   if(!is.na(rf_name)) {
     portfolio$rf_name <- rf_name
+  }
+  
+  if(!shorts_allowed) {
+    
+    rf_real <- portfolio$rf
+    weights_real <- portfolio$weights
+    
+    
+    rfs <- seq(-0.1,.1,0.0005)
+    
+    rbar_opt <- numeric()
+    risk_opt <- numeric()
+    
+    for(i in 1:length(rfs)) {
+      
+      portfolio$rf <- rfs[i]
+      
+      portfolio$weights <- get_optimum_portfolio(portfolio)
+      
+      rbar_opt[i] <- get_portfolio_return(portfolio)
+      risk_opt[i] <- get_portfolio_variance(portfolio)^.5
+      
+    }
+    
+    portfolio$df_no_shorts <- data.frame(risk_opt, rbar_opt)
+    
+    
+    portfolio$rf <- rf_real
+    portfolio$weights <- weights_real
+    
   }
   
   # return the portfolio object
@@ -492,7 +490,6 @@ plot_frontier <- function(portfolio) {
   n <- ncol(portfolio$stocks)
   
   A <- t(rep(1,n)) %*% solve(covmat) %*% means
-  print(A)
   B <- t(means) %*% solve(covmat) %*% means
   C <- t(rep(1,n)) %*% solve(covmat) %*% rep(1,n)
   D <- B * C - A^2

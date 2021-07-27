@@ -19,6 +19,8 @@ ui <- fluidPage(
     
     # Application title
     titlePanel("Portfolio Analysis Tool"),
+    h5("Created by Rockford Mankini and Nicolas Christou"),
+    a("Click for GitHub Repository", href="https://github.com/RockfordMankini/PortfolioAnalysis"),
     
     sidebarLayout(
         sidebarPanel(
@@ -73,7 +75,7 @@ ui <- fluidPage(
                         
                         
                         tabPanel("Find Portfolios",
-                                numericInput("rf", label = h3("Add Risk Free Asset"), value = 0, step=.001),
+                                numericInput("rf", label = h3("Add Risk Free Asset"), value = .001, step=.001, min=.001),
                                 textInput("rfName", "RF Name", "RF"),
                                 numericInput("num", label = h3("Expected Value"), value = .01, step=.01),
                                 actionButton("optimumPortfolio", label = "Find Optimum Portfolio"),
@@ -89,7 +91,17 @@ ui <- fluidPage(
                                  checkboxInput("plotBottomFrontier", label = "Print Frontier (Bottom Half)", value = TRUE),
                                  checkboxInput("plotCAL", label = "Print CAL Line", value = TRUE),
                                  checkboxInput("plotRF", label = "Plot Risk Free Assets", value = TRUE),
-                                 checkboxInput("plotPortfolio", label = "Plot Portfolio", value = TRUE)))),
+                                 checkboxInput("plotPortfolio", label = "Plot Portfolio", value = TRUE)),
+                        tabPanel("Methodology and Notes", 
+                            helpText("This tool was made by Rockford Mankini with the help of his professor, Nicolas Christou.
+                                   The models used in this tool are covered in his course, Statistics C183/C283: Statistical Models in Finance,
+                                   at the University of California, Los Angeles."),
+                            br(),
+                            helpText("For drawing the efficient frontier with short sales allowed, the hyperbola method is used. For short sales not allowed,
+                                     the frontier is traced out using multiple values for the risk-free asset."),
+                            br(),
+                            helpText("All of the optimal portfolios are found by multiplying the inverse of the covariance matrix of the portfolio by
+                                     the average returns of each stock minus the risk-free asset.")))),
         
         # Show a plot of the generated distribution
         mainPanel(
@@ -160,12 +172,27 @@ server <- function(input, output) {
                 expected <- portfolio$port_return
                 name <- portfolio$name
 
+                # if shorts allowed, use hyperbola method
                 if(portfolio$shorts_allowed == TRUE) {
+                    
                     df <- plot_frontier(portfolio)
                     
                     if(input$plotTopFrontier){
                         g <- g %>% add_trace(x = df$sdeff, y= df$y1,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
                     }
+                    
+                    if(input$plotBottomFrontier) {
+                        g <- g %>% add_trace(x = df$sdeff, y= df$y2,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                    }
+                }
+                
+                # if shorts not allowed, draw using multiple rfs
+                else {
+
+                    df <- portfolio$df_no_shorts
+                    
+                    g <- g %>% add_trace(x = df$risk_opt, y= df$rbar_opt,  type='scatter', mode = 'lines', name=paste("Expected Returns From:", name))
+                    
                 }
                 
                 if(input$plotPortfolio) {
@@ -203,7 +230,7 @@ server <- function(input, output) {
         rf <- input$rf
         shorts_allowed <- as.logical(input$short)
         
-        if(input$method == "SIM" & rf > 0) {
+        if(input$method == "SIM" & rf > 0 & shorts_allowed) {
             req(input$index_data)
             index <- read.csv(input$index_data$datapath)
             
@@ -211,17 +238,17 @@ server <- function(input, output) {
                                       name=input$portfolioName, index=index, shorts_allowed = shorts_allowed, E=input$num))
         }
         
-        else if(input$method == "CC" & rf > 0) {
+        else if(input$method == "CC" & rf > 0 & shorts_allowed) {
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
                                       name=input$portfolioName, shorts_allowed = shorts_allowed, E=input$num))
         }
         
-        else if(input$method == "historical" & rf >= 0) {
+        else if(input$method == "historical" & rf >= 0 & shorts_allowed) {
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
                                       name=input$portfolioName, shorts_allowed = TRUE, E=input$num))
         }
         
-        else if(input$method == "MGM" & rf > 0) {
+        else if(input$method == "MGM" & rf > 0 & shorts_allowed) {
             breaks <- str_split(input$industry_breaks, ",")[[1]] %>% str_trim() %>% as.numeric()
             
             portfolio(build_portfolio(stocks=data(), rf=input$rf, rf_name=input$rfName, method=input$method, 
@@ -267,8 +294,6 @@ server <- function(input, output) {
         rf <- input$rf
         shorts_allowed <- as.logical(input$short)
         
-        print(shorts_allowed)
-        
         if(input$method == "SIM" & rf > 0) {
             req(input$index_data)
             index <- read.csv(input$index_data$datapath)
@@ -307,7 +332,7 @@ server <- function(input, output) {
         names(new_portfolio_list)[portfolios + 1] <- input$portfolioName
         portfolio_list(new_portfolio_list)
         
-        print(portfolio_list())
+        #print(portfolio_list())
         
         
         
