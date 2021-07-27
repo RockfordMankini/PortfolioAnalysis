@@ -408,6 +408,7 @@ build_portfolio <- function(stocks, method, rf=NA, E=NA, name=NA, rf_name=NA, in
   A <- t(rep(1,n)) %*% solve(portfolio$cov) %*% portfolio$returns
   B <- t(portfolio$returns) %*% solve(portfolio$cov) %*% portfolio$returns
   C <- t(rep(1,n)) %*% solve(portfolio$cov) %*% rep(1,n)
+  D <- B*C - A^2
 
   portfolio$A <- A
   portfolio$B <- B
