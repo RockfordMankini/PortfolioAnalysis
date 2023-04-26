@@ -20,7 +20,6 @@ get_covariance_matrix <- function(portfolio) {
   }
   
   # single index model covariance.
-  # something is wrong with the math here. I'm not sure what.
   if(method == "SIM") {
     index <- portfolio$index
     rf <- portfolio$rf
